@@ -1,0 +1,985 @@
+================================================================================
+SMARTMEETS V2.0 - PHASE 1 IMPLEMENTATION GUIDE
+================================================================================
+Fokus: Die ersten 4 Wochen (MVP mit echten Features)
+Status: Ready to Build
+Language: Deutsch (Dokumentation) + Code (English)
+
+================================================================================
+SCHRITT 1: PROJEKT SETUP (Tag 1-2)
+================================================================================
+
+1.1 REPO STRUCTURE ERSTELLEN
+────────────────────────────
+
+```bash
+smartmeets-v2/
+├── frontend/                    # React App
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── MeetingRecorder/
+│   │   │   ├── MeetingPlanner/
+│   │   │   ├── TranscriptViewer/
+│   │   │   ├── CalendarIntegration/
+│   │   │   └── Common/
+│   │   ├── hooks/
+│   │   │   ├── useAudioRecorder.ts
+│   │   │   ├── useTranscription.ts
+│   │   │   └── useCalendarIntegration.ts
+│   │   ├── services/
+│   │   │   ├── api.ts
+│   │   │   ├── openaiService.ts
+│   │   │   └── storageService.ts
+│   │   ├── types/
+│   │   │   └── index.ts
+│   │   └── App.tsx
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── .env.example
+│
+├── backend/                     # Node.js Server
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── routes/
+│   │   │   │   ├── meetings.ts
+│   │   │   │   ├── transcriptions.ts
+│   │   │   │   ├── calendar.ts
+│   │   │   │   └── auth.ts
+│   │   │   └── middleware/
+│   │   │       ├── auth.ts
+│   │   │       └── errorHandler.ts
+│   │   ├── services/
+│   │   │   ├── transcriptionService.ts
+│   │   │   ├── openaiService.ts
+│   │   │   ├── calendarService.ts
+│   │   │   └── emailService.ts
+│   │   ├── models/
+│   │   │   ├── Meeting.ts
+│   │   │   ├── Transcript.ts
+│   │   │   └── User.ts
+│   │   ├── config/
+│   │   │   ├── database.ts
+│   │   │   └── env.ts
+│   │   └── index.ts
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── .env.example
+│   └── docker-compose.yml
+│
+└── docs/
+    ├── API.md
+    ├── SETUP.md
+    └── DEVELOPMENT.md
+```
+
+1.2 DEPENDENCIES INSTALLIEREN
+──────────────────────────────
+
+Frontend (package.json):
+```json
+{
+  "name": "smartmeets-frontend",
+  "version": "2.0.0",
+  "type": "module",
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-query": "^3.39.3",
+    "zustand": "^4.3.8",
+    "typescript": "^5.0.0",
+    "axios": "^1.4.0",
+    "date-fns": "^2.30.0",
+    "react-calendar": "^4.2.1",
+    "lucide-react": "^0.263.1",
+    "recharts": "^2.7.2",
+    "tailwindcss": "^3.3.0",
+    "openai": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/node": "^20.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "vite": "^4.4.0"
+  }
+}
+```
+
+Backend (package.json):
+```json
+{
+  "name": "smartmeets-backend",
+  "version": "2.0.0",
+  "type": "module",
+  "dependencies": {
+    "express": "^4.18.2",
+    "typescript": "^5.0.0",
+    "pg": "^8.11.0",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "jsonwebtoken": "^9.1.0",
+    "bcryptjs": "^2.4.3",
+    "openai": "^4.0.0",
+    "axios": "^1.4.0",
+    "nodemailer": "^6.9.4",
+    "multer": "^1.4.5",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@types/node": "^20.0.0",
+    "@types/jsonwebtoken": "^9.0.2",
+    "ts-node": "^10.9.1",
+    "nodemon": "^3.0.1"
+  }
+}
+```
+
+================================================================================
+SCHRITT 2: BACKEND SETUP (Tag 3-5)
+================================================================================
+
+2.1 DATABASE SETUP MIT PostgreSQL
+──────────────────────────────────
+
+```bash
+# Mit Docker (empfohlen)
+docker run --name smartmeets-db \
+  -e POSTGRES_DB=smartmeets \
+  -e POSTGRES_USER=admin \
+  -e POSTGRES_PASSWORD=secure_password \
+  -p 5432:5432 \
+  -d postgres:15
+```
+
+2.2 ENVIRONMENT CONFIGURATION
+──────────────────────────────
+
+.env (Backend):
+```
+# Database
+DATABASE_URL=postgresql://admin:secure_password@localhost:5432/smartmeets
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=smartmeets
+DB_USER=admin
+DB_PASSWORD=secure_password
+
+# API Keys
+OPENAI_API_KEY=sk-... (dein key)
+OUTLOOK_CLIENT_ID=...
+OUTLOOK_CLIENT_SECRET=...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+
+# Server
+PORT=3000
+NODE_ENV=development
+JWT_SECRET=super_secret_key_change_in_production
+
+# Email
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASSWORD=your_app_password
+
+# Frontend
+FRONTEND_URL=http://localhost:5173
+```
+
+2.3 DATABASE INITIALIZATION
+─────────────────────────────
+
+src/config/database.ts:
+```typescript
+import pkg from 'pg';
+const { Pool } = pkg;
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const pool = new Pool({
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT || '5432'),
+  database: process.env.DB_NAME,
+});
+
+// Initialize schema
+export const initializeDatabase = async () => {
+  try {
+    // Users table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email VARCHAR(255) UNIQUE NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        password_hash VARCHAR(255),
+        company_id UUID,
+        role VARCHAR(50) DEFAULT 'user',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Meetings table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS meetings (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        organizer_id UUID REFERENCES users(id),
+        start_time TIMESTAMP,
+        end_time TIMESTAMP,
+        status VARCHAR(50) DEFAULT 'scheduled',
+        recording_url TEXT,
+        video_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Transcripts table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS transcripts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        meeting_id UUID REFERENCES meetings(id),
+        content TEXT,
+        language VARCHAR(10) DEFAULT 'de',
+        duration INT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Transcript segments
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS transcript_segments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        transcript_id UUID REFERENCES transcripts(id),
+        speaker_name VARCHAR(255),
+        start_time INT,
+        end_time INT,
+        content TEXT,
+        is_edited BOOLEAN DEFAULT FALSE,
+        confidence_score FLOAT DEFAULT 1.0
+      );
+    `);
+
+    // Action items
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS action_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        meeting_id UUID REFERENCES meetings(id),
+        task_description TEXT NOT NULL,
+        assignee_id UUID REFERENCES users(id),
+        due_date DATE,
+        priority VARCHAR(20) DEFAULT 'medium',
+        status VARCHAR(50) DEFAULT 'open',
+        timestamp_in_meeting INT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    console.log('✓ Database initialized successfully');
+  } catch (error) {
+    console.error('✗ Database initialization failed:', error);
+    throw error;
+  }
+};
+
+export default pool;
+```
+
+2.4 EXPRESS SERVER SETUP
+─────────────────────────
+
+src/index.ts:
+```typescript
+import express, { Express, Request, Response } from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { initializeDatabase } from './config/database.js';
+import authRoutes from './api/routes/auth.js';
+import meetingRoutes from './api/routes/meetings.js';
+import transcriptionRoutes from './api/routes/transcriptions.js';
+import calendarRoutes from './api/routes/calendar.js';
+import errorHandler from './api/middleware/errorHandler.js';
+
+dotenv.config();
+
+const app: Express = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Initialize Database
+await initializeDatabase();
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/meetings', meetingRoutes);
+app.use('/api/transcriptions', transcriptionRoutes);
+app.use('/api/calendar', calendarRoutes);
+
+// Health check
+app.get('/api/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date() });
+});
+
+// Error Handler
+app.use(errorHandler);
+
+// Start Server
+app.listen(PORT, () => {
+  console.log(`✓ Server running at http://localhost:${PORT}`);
+  console.log(`✓ API docs at http://localhost:${PORT}/api/docs`);
+});
+
+export default app;
+```
+
+================================================================================
+SCHRITT 3: OPENAI WHISPER INTEGRATION (Tag 6-7)
+================================================================================
+
+3.1 TRANSCRIPTION SERVICE
+──────────────────────────
+
+src/services/transcriptionService.ts:
+```typescript
+import OpenAI from 'openai';
+import fs from 'fs';
+import path from 'path';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+interface TranscriptionOptions {
+  language?: string;
+  temperature?: number;
+}
+
+export const transcribeAudio = async (
+  audioPath: string,
+  options: TranscriptionOptions = {}
+): Promise<{
+  text: string;
+  segments: Array<{
+    timestamp: string;
+    text: string;
+    confidence: number;
+  }>;
+}> => {
+  try {
+    console.log(`📝 Starting transcription for: ${audioPath}`);
+
+    // Read audio file
+    const audioBuffer = fs.readFileSync(audioPath);
+    const audioFile = new File([audioBuffer], path.basename(audioPath), {
+      type: 'audio/webm',
+    });
+
+    // Call OpenAI Whisper API
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: 'whisper-1',
+      language: options.language || 'de',
+      temperature: options.temperature || 0.3,
+    });
+
+    console.log(`✓ Transcription completed: ${transcription.text.substring(0, 100)}...`);
+
+    // Parse response into segments
+    const segments = parseTranscription(transcription.text);
+
+    return {
+      text: transcription.text,
+      segments,
+    };
+  } catch (error) {
+    console.error('✗ Transcription failed:', error);
+    throw new Error(`Transcription error: ${error}`);
+  }
+};
+
+// Parse full text into timestamped segments
+const parseTranscription = (fullText: string) => {
+  const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [];
+  const segments = sentences.map((sentence, index) => ({
+    timestamp: formatTime(index * 10), // Rough estimate
+    text: sentence.trim(),
+    confidence: 0.95,
+  }));
+  return segments;
+};
+
+const formatTime = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+export default transcribeAudio;
+```
+
+3.2 TRANSCRIPTION API ROUTE
+────────────────────────────
+
+src/api/routes/transcriptions.ts:
+```typescript
+import express, { Request, Response } from 'express';
+import multer from 'multer';
+import transcribeAudio from '../../services/transcriptionService.js';
+import pool from '../../config/database.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { v4 as uuidv4 } from 'uuid';
+
+const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
+
+// POST /api/transcriptions/upload
+router.post(
+  '/upload',
+  authenticateToken,
+  upload.single('audio'),
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No audio file provided' });
+      }
+
+      const { meetingId } = req.body;
+      const userId = req.userId;
+
+      // Save temp file
+      const tempPath = `/tmp/${uuidv4()}.webm`;
+      require('fs').writeFileSync(tempPath, req.file.buffer);
+
+      // Transcribe
+      const { text, segments } = await transcribeAudio(tempPath, {
+        language: 'de',
+      });
+
+      // Save to database
+      const transcriptId = uuidv4();
+      
+      // Insert transcript
+      await pool.query(
+        `INSERT INTO transcripts (id, meeting_id, content, language, duration)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [transcriptId, meetingId, text, 'de', segments.length * 10]
+      );
+
+      // Insert segments
+      for (const segment of segments) {
+        await pool.query(
+          `INSERT INTO transcript_segments 
+           (transcript_id, speaker_name, start_time, content, confidence_score)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [transcriptId, 'Speaker', 0, segment.text, segment.confidence]
+        );
+      }
+
+      // Clean up temp file
+      require('fs').unlinkSync(tempPath);
+
+      res.json({
+        success: true,
+        transcriptId,
+        text,
+        segmentCount: segments.length,
+      });
+    } catch (error) {
+      console.error('Transcription error:', error);
+      res.status(500).json({ error: 'Transcription failed' });
+    }
+  }
+);
+
+// GET /api/transcriptions/:meetingId
+router.get('/:meetingId', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { meetingId } = req.params;
+
+    const result = await pool.query(
+      `SELECT * FROM transcripts WHERE meeting_id = $1`,
+      [meetingId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Transcript not found' });
+    }
+
+    const transcript = result.rows[0];
+    const segments = await pool.query(
+      `SELECT * FROM transcript_segments WHERE transcript_id = $1 ORDER BY start_time`,
+      [transcript.id]
+    );
+
+    res.json({
+      ...transcript,
+      segments: segments.rows,
+    });
+  } catch (error) {
+    console.error('Error fetching transcript:', error);
+    res.status(500).json({ error: 'Failed to fetch transcript' });
+  }
+});
+
+export default router;
+```
+
+================================================================================
+SCHRITT 4: MEETINGS API (Tag 8-9)
+================================================================================
+
+4.1 MEETINGS ROUTE
+───────────────────
+
+src/api/routes/meetings.ts:
+```typescript
+import express, { Request, Response } from 'express';
+import pool from '../../config/database.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { v4 as uuidv4 } from 'uuid';
+
+const router = express.Router();
+
+// POST /api/meetings (Create new meeting)
+router.post('/', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const {
+      title,
+      description,
+      startTime,
+      endTime,
+      attendees,
+    } = req.body;
+
+    const userId = req.userId;
+    const meetingId = uuidv4();
+
+    await pool.query(
+      `INSERT INTO meetings (id, title, description, organizer_id, start_time, end_time, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'scheduled')`,
+      [meetingId, title, description, userId, startTime, endTime]
+    );
+
+    res.json({
+      success: true,
+      meetingId,
+      message: 'Meeting created successfully',
+    });
+  } catch (error) {
+    console.error('Error creating meeting:', error);
+    res.status(500).json({ error: 'Failed to create meeting' });
+  }
+});
+
+// GET /api/meetings (List user's meetings)
+router.get('/', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId;
+
+    const result = await pool.query(
+      `SELECT * FROM meetings 
+       WHERE organizer_id = $1 
+       ORDER BY start_time DESC`,
+      [userId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching meetings:', error);
+    res.status(500).json({ error: 'Failed to fetch meetings' });
+  }
+});
+
+// PUT /api/meetings/:id (Update meeting)
+router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { title, description, status } = req.body;
+    const userId = req.userId;
+
+    // Verify ownership
+    const meeting = await pool.query(
+      'SELECT organizer_id FROM meetings WHERE id = $1',
+      [id]
+    );
+
+    if (meeting.rows[0].organizer_id !== userId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    await pool.query(
+      `UPDATE meetings 
+       SET title = $1, description = $2, status = $3, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4`,
+      [title, description, status, id]
+    );
+
+    res.json({ success: true, message: 'Meeting updated' });
+  } catch (error) {
+    console.error('Error updating meeting:', error);
+    res.status(500).json({ error: 'Failed to update meeting' });
+  }
+});
+
+export default router;
+```
+
+================================================================================
+SCHRITT 5: AUTHENTICATION SETUP (Tag 10)
+================================================================================
+
+5.1 JWT MIDDLEWARE
+───────────────────
+
+src/api/middleware/auth.ts:
+```typescript
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+
+interface AuthRequest extends Request {
+  userId?: string;
+}
+
+export const authenticateToken = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // "Bearer TOKEN"
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+    req.userId = decoded.userId;
+    next();
+  } catch (error) {
+    res.status(403).json({ error: 'Invalid token' });
+  }
+};
+
+export const generateToken = (userId: string) => {
+  return jwt.sign({ userId }, process.env.JWT_SECRET!, {
+    expiresIn: '24h',
+  });
+};
+```
+
+5.2 AUTH ROUTES
+────────────────
+
+src/api/routes/auth.ts:
+```typescript
+import express, { Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
+import pool from '../../config/database.js';
+import { generateToken } from '../middleware/auth.js';
+import { v4 as uuidv4 } from 'uuid';
+
+const router = express.Router();
+
+// POST /api/auth/register
+router.post('/register', async (req: Request, res: Response) => {
+  try {
+    const { email, name, password } = req.body;
+
+    // Check if user exists
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+    const userId = uuidv4();
+
+    // Create user
+    await pool.query(
+      `INSERT INTO users (id, email, name, password_hash)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, email, name, passwordHash]
+    );
+
+    const token = generateToken(userId);
+
+    res.status(201).json({
+      success: true,
+      token,
+      user: { id: userId, email, name },
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+// POST /api/auth/login
+router.post('/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const user = result.rows[0];
+    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+
+    if (!passwordMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = generateToken(user.id);
+
+    res.json({
+      success: true,
+      token,
+      user: { id: user.id, email: user.email, name: user.name },
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+export default router;
+```
+
+================================================================================
+SCHRITT 6: FRONTEND SETUP (Tag 11-12)
+================================================================================
+
+6.1 REACT COMPONENT STRUCTURE
+──────────────────────────────
+
+src/types/index.ts:
+```typescript
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+}
+
+export interface Meeting {
+  id: string;
+  title: string;
+  description?: string;
+  startTime: Date;
+  endTime?: Date;
+  organizerId: string;
+  status: 'scheduled' | 'recording' | 'completed' | 'cancelled';
+  recordingUrl?: string;
+}
+
+export interface Transcript {
+  id: string;
+  meetingId: string;
+  content: string;
+  language: string;
+  duration: number;
+  segments: TranscriptSegment[];
+}
+
+export interface TranscriptSegment {
+  id: string;
+  speakerName: string;
+  timestamp: string;
+  content: string;
+  isEdited: boolean;
+  confidence: number;
+}
+
+export interface ActionItem {
+  id: string;
+  meetingId: string;
+  taskDescription: string;
+  assigneeId?: string;
+  dueDate?: Date;
+  priority: 'high' | 'medium' | 'low';
+  status: 'open' | 'in_progress' | 'completed';
+}
+```
+
+6.2 ZUSTAND STORE
+──────────────────
+
+src/store/meetingStore.ts:
+```typescript
+import { create } from 'zustand';
+import { Meeting, Transcript, User } from '../types';
+
+interface MeetingState {
+  currentMeeting: Meeting | null;
+  meetings: Meeting[];
+  transcript: Transcript | null;
+  currentUser: User | null;
+  
+  setCurrentMeeting: (meeting: Meeting) => void;
+  setMeetings: (meetings: Meeting[]) => void;
+  setTranscript: (transcript: Transcript) => void;
+  setCurrentUser: (user: User) => void;
+  logout: () => void;
+}
+
+export const useMeetingStore = create<MeetingState>((set) => ({
+  currentMeeting: null,
+  meetings: [],
+  transcript: null,
+  currentUser: null,
+  
+  setCurrentMeeting: (meeting) => set({ currentMeeting: meeting }),
+  setMeetings: (meetings) => set({ meetings }),
+  setTranscript: (transcript) => set({ transcript }),
+  setCurrentUser: (user) => set({ currentUser: user }),
+  logout: () => set({ currentUser: null, currentMeeting: null }),
+}));
+```
+
+================================================================================
+SCHRITT 7: API CLIENT (Day 13)
+================================================================================
+
+src/services/api.ts:
+```typescript
+import axios, { AxiosInstance } from 'axios';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
+
+class APIClient {
+  private client: AxiosInstance;
+
+  constructor() {
+    this.client = axios.create({
+      baseURL: API_BASE_URL,
+    });
+
+    // Add token to requests
+    this.client.interceptors.request.use((config) => {
+      const token = localStorage.getItem('authToken');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    });
+  }
+
+  // Auth
+  async register(email: string, name: string, password: string) {
+    const response = await this.client.post('/auth/register', {
+      email,
+      name,
+      password,
+    });
+    return response.data;
+  }
+
+  async login(email: string, password: string) {
+    const response = await this.client.post('/auth/login', {
+      email,
+      password,
+    });
+    localStorage.setItem('authToken', response.data.token);
+    return response.data;
+  }
+
+  // Meetings
+  async createMeeting(data: {
+    title: string;
+    description?: string;
+    startTime: Date;
+    endTime?: Date;
+  }) {
+    return (await this.client.post('/meetings', data)).data;
+  }
+
+  async getMeetings() {
+    return (await this.client.get('/meetings')).data;
+  }
+
+  async updateMeeting(id: string, data: any) {
+    return (await this.client.put(`/meetings/${id}`, data)).data;
+  }
+
+  // Transcriptions
+  async uploadAudio(file: File, meetingId: string) {
+    const formData = new FormData();
+    formData.append('audio', file);
+    formData.append('meetingId', meetingId);
+
+    return (
+      await this.client.post('/transcriptions/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    ).data;
+  }
+
+  async getTranscript(meetingId: string) {
+    return (await this.client.get(`/transcriptions/${meetingId}`)).data;
+  }
+}
+
+export const apiClient = new APIClient();
+```
+
+================================================================================
+RUNBOOK: LOKAL STARTEN
+================================================================================
+
+1. Dependencies installieren:
+   ```bash
+   cd backend && npm install
+   cd ../frontend && npm install
+   ```
+
+2. Database starten:
+   ```bash
+   docker-compose up -d
+   ```
+
+3. Backend starten:
+   ```bash
+   cd backend
+   npm run dev
+   # ✓ Server running at http://localhost:3000
+   ```
+
+4. Frontend starten (in neuem Terminal):
+   ```bash
+   cd frontend
+   npm run dev
+   # ✓ App running at http://localhost:5173
+   ```
+
+5. Test API:
+   ```bash
+   curl http://localhost:3000/api/health
+   # {"status":"ok","timestamp":"..."}
+   ```
+
+================================================================================
+NEXT: CALENDAR INTEGRATION (Tag 14-15)
+================================================================================
+
+Nächster Schritt nach diesem Setup:
+1. Outlook OAuth Integration
+2. Calendar UI Component
+3. Meeting Scheduling with Invites
+4. Email Notifications
+
+Weitere Details in separatem Dokument.
+
+================================================================================
