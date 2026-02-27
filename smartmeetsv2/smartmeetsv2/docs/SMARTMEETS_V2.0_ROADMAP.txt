@@ -1,0 +1,1220 @@
+================================================================================
+SMARTMEETS V2.0 - ENTERPRISE DEVELOPMENT ROADMAP
+================================================================================
+Status: Planning Phase
+Target: Production-Ready für Business/Enterprise
+Start Date: 2026-02-15
+Version: 2.0.0
+
+================================================================================
+ÜBERSICHT - WAS WIRD GEBAUT
+================================================================================
+
+SmartMeets v2.0 wird eine **COMPLETE MEETING MANAGEMENT PLATFORM** mit:
+  ✅ Intelligente Spracherkennung (Bern-Deutsch, Hochdeutsch, Englisch)
+  ✅ Speaker Diarization & Identifikation
+  ✅ Kalender-Integration (Outlook, Google Calendar, Teams)
+  ✅ Einladungs-Management (Email, Teams, Slack)
+  ✅ AI-Summarization & Action Items Extraction
+  ✅ Meeting Recording mit Video-Unterstützung
+  ✅ Real-time Collaboration Features
+  ✅ Integration mit Microsoft Teams, Slack, Zoom
+  ✅ Advanced Analytics & Reporting
+  ✅ Enterprise Security & Compliance
+
+================================================================================
+MODUL 1: INTELLIGENTE SPRACHERKENNUNG
+================================================================================
+
+1.1 LANGUAGE DETECTION & DIALECT RECOGNITION
+────────────────────────────────────────────
+
+Problem: Web Speech API erkennt Dialekte nicht, nur Standard-Sprachen
+
+Lösung Stack:
+  
+  Option A: OpenAI Whisper (EMPFOHLEN)
+    ✅ Beste Accuracy für Dialekte
+    ✅ Unterstützt 99 Sprachen + Dialekte
+    ✅ Bern-Deutsch erkennung
+    ✅ Kosteneffektiv: $0.006/min
+    ✅ Multilingual in einer API
+    ✅ Timestamps & Confidence-Scores
+    
+    API Implementierung:
+    ```javascript
+    const transcribeAudio = async (audioBlob) => {
+      const formData = new FormData();
+      formData.append('file', audioBlob);
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'de'); // Auto-detect Dialekt
+      
+      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+        body: formData
+      });
+      
+      return response.json();
+    };
+    ```
+
+  Option B: Google Cloud Speech-to-Text (Backup)
+    ✓ Auch sehr gut
+    ✓ Streaming-Support
+    ✓ Kostenlich höher: $0.024/min
+    ✓ Enterprise-Support
+    
+  Option C: Azure Speech Services (für Teams-Integration)
+    ✓ Native Teams-Integration
+    ✓ Custom Model Training
+    ✓ Hohe Kosten
+
+Recommendation: **OpenAI Whisper + Google Cloud als Fallback**
+
+1.2 SPEAKER DIARIZATION (WER SPRICHT WANN?)
+──────────────────────────────────────────────
+
+Problem: Aktuell: "[00:00] Speaker: Text" - aber wer ist Speaker?
+
+Lösung:
+
+  A) Automatische Speaker-Erkennung (Pyannote AI)
+     ```python
+     # Backend-Service (Node.js mit Python-Worker)
+     from pyannote.audio import Pipeline
+     
+     pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.0")
+     diarization = pipeline("audio.wav")
+     
+     # Output:
+     # [00:00-00:15] Speaker 1
+     # [00:15-00:45] Speaker 2
+     # [00:45-01:00] Speaker 1
+     ```
+
+  B) Manual Speaker Assignment (UI)
+     - Benutzer kann Speaker umbenennen
+     - Speichert Speaker-Profile (Stimme)
+     - Intelligent Matching nächstes Mal
+     
+  C) Voice Recognition (Biometric)
+     - Browser Web Audio API für Voice-Print
+     - Speichert Voice-Signaturen
+     - Nur für Trust-Networks
+
+Architektur:
+  Frontend: [Audio Upload] → Backend Service
+  Backend: [Pyannote AI] → Speaker Timeline
+  Storage: Speaker-Profiles in DB
+  Frontend: [Interactive UI] zum Bearbeiten
+
+Implementation Phase 1:
+  - Manual Speaker Assignment (einfach, schnell)
+  - UI zum umbenennen
+
+Implementation Phase 2:
+  - Pyannote Integration (Medium Aufwand)
+  - Auto-Detection
+
+Implementation Phase 3:
+  - Voice Biometrics (Complex)
+  - Recurring Participants
+
+1.3 DIALECT HANDLING - BERN DEUTSCH
+─────────────────────────────────────
+
+Bern-Deutsch Spezifika:
+  - "Grüezi" statt "Guten Tag"
+  - "Schön" statt "Schön"
+  - Spezifische Vokabeln
+  - Schnellere Sprechgeschwindigkeit
+  - Nasallaute
+
+Umsetzung:
+
+  A) Whisper Language-Hint:
+     ```javascript
+     // Sag OpenAI dass es Schweizerdeutsch ist
+     const response = await transcribeWithHints({
+       audioBlob,
+       language: 'de',
+       context: 'Swiss Business Meeting', // Hilft Whisper
+       glossary: {
+         'Grüezi': 'Grüezi',
+         'Chöschtli': 'Chöschtli' // Spezialwörter
+       }
+     });
+     ```
+
+  B) Post-Processing (Regex-Fixes):
+     ```javascript
+     const swissGermanFixes = {
+       'guten tag': 'Grüezi',
+       'danke viel': 'Merci villmal',
+       // ... weitere Patterns
+     };
+     
+     let transcript = result.text;
+     Object.entries(swissGermanFixes).forEach(([from, to]) => {
+       transcript = transcript.replace(new RegExp(from, 'gi'), to);
+     });
+     ```
+
+  C) Custom Model Fine-Tuning (Advanced):
+     - Trainiere OpenAI Whisper mit Bern-Deutsch Samples
+     - Verbessert Accuracy um 15-20%
+     - Kostet: ~$500-1000 Training
+
+Recommendation: **A + B kombinieren für v2.0**
+
+================================================================================
+MODUL 2: KALENDER-INTEGRATION & MEETING-MANAGEMENT
+================================================================================
+
+2.1 CALENDAR INTEGRATIONS
+──────────────────────────
+
+Stack:
+  
+  Frontend: React Calendar Component
+  Backend: Node.js mit Calendar APIs
+  Database: PostgreSQL für Meeting-Metadata
+  
+Integration Targets:
+
+  1) Microsoft Outlook / Office 365
+     - OAuth2 Integration
+     - Create Events
+     - Send Invitations
+     - Fetch Meetings
+     - Update Status
+     
+     Implementation:
+     ```javascript
+     const outlookAPI = {
+       authenticate: () => {
+         // OAuth2 Flow
+         window.location = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?
+           client_id=${OUTLOOK_CLIENT_ID}&
+           scope=Calendars.ReadWrite&
+           redirect_uri=${REDIRECT_URI}`;
+       },
+       
+       createEvent: async (title, startTime, attendees) => {
+         const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+           method: 'POST',
+           headers: {
+             'Authorization': `Bearer ${accessToken}`,
+             'Content-Type': 'application/json'
+           },
+           body: JSON.stringify({
+             subject: title,
+             start: { dateTime: startTime },
+             attendees: attendees.map(email => ({
+               emailAddress: { address: email },
+               type: 'required'
+             }))
+           })
+         });
+         return response.json();
+       }
+     };
+     ```
+
+  2) Google Calendar
+     - OAuth2 Integration
+     - Google Meet Support
+     - Share Transcripts
+     
+  3) Slack Integration
+     - Send Meeting Summaries to Channels
+     - Invite Users
+     - Share Recordings
+     
+  4) Microsoft Teams
+     - Native Teams Integration
+     - Teams Meeting Transcription
+     - Channel Sharing
+     - Direct Notifications
+
+2.2 MEETING SCHEDULING & INVITATIONS
+─────────────────────────────────────
+
+Feature-Set:
+
+  A) Create New Meeting
+     - Title, Description
+     - Date/Time Picker
+     - Recurring (Weekly, Monthly, etc.)
+     - Duration
+     - Meeting Type (Internal, Client, etc.)
+  
+  B) Invite Attendees
+     - Email Input with Autocomplete
+     - Show Availability (if integrated)
+     - Add from Contacts
+     - Teams/Slack/Zoom Users
+     
+  C) Send Invitations
+     - Email Template
+     - Teams Direct Message
+     - Slack DM
+     - Calendar Invite (ICS file)
+     
+  D) Track Responses
+     - Accepted/Declined/Maybe
+     - Update Attendee Count
+     - Send Reminders
+     
+  E) Meeting Link Generation
+     - SmartMeets Recording Link
+     - Teams/Zoom Link (if integrated)
+     - QR Code for Mobile
+
+Implementation Example:
+```javascript
+const createMeetingWithInvitations = async ({
+  title,
+  startTime,
+  attendees,
+  description,
+  sendVia = ['email', 'teams', 'calendar']
+}) => {
+  // 1. Create Meeting in DB
+  const meeting = await db.meetings.create({
+    title,
+    startTime,
+    organizer: currentUser.id,
+    description
+  });
+  
+  // 2. Create Calendar Event
+  if (sendVia.includes('calendar')) {
+    await outlookAPI.createEvent(title, startTime, attendees);
+  }
+  
+  // 3. Send Email Invitations
+  if (sendVia.includes('email')) {
+    await emailService.sendInvitations({
+      meetingId: meeting.id,
+      recipients: attendees,
+      template: 'meeting_invitation'
+    });
+  }
+  
+  // 4. Send Teams Notifications
+  if (sendVia.includes('teams')) {
+    await teamsAPI.sendDirectMessages({
+      recipients: attendees,
+      message: `You're invited to: ${title}`
+    });
+  }
+  
+  return meeting;
+};
+```
+
+================================================================================
+MODUL 3: REAL-TIME COLLABORATION
+================================================================================
+
+3.1 LIVE MEETING FEATURES
+─────────────────────────
+
+Während Meeting läuft:
+
+  A) Live Transcription Display
+     - Real-time Text unter Video
+     - Timestamps
+     - Speaker Name
+     - Formatting (bold, highlights)
+     
+  B) Live Reactions
+     - Emoji-Reactions (👍 👎 😂 ❤️)
+     - Participant Status (Thumbs up, etc.)
+     
+  C) Chat Integration
+     - In-Meeting Chat
+     - Message History
+     - File Sharing
+     - GIFs/Emojis
+     
+  D) Recording Indicator
+     - Visible zu allen Teilnehmern
+     - "Being Recorded" Banner
+     - Consent Management
+     
+  E) Timer & Agenda
+     - Meeting Duration
+     - Agenda Items with Timestamps
+     - Time Warnings (5 min left)
+
+3.2 PARTICIPANT MANAGEMENT
+──────────────────────────
+
+  A) Participant List
+     - Show Who's in Meeting
+     - Mic/Camera Status
+     - Hand Raised
+     - Recording Status
+     
+  B) Meeting Controls
+     - Mute All / Unmute All
+     - Record/Stop
+     - End Meeting
+     - Lock Meeting (no new participants)
+     
+  C) Breakout Rooms (Future v2.1)
+     - Split into Sub-Groups
+     - Separate Recordings
+     - Rejoin Main Room
+
+Implementation:
+```javascript
+const useMeetingParticipants = () => {
+  const [participants, setParticipants] = useState([]);
+  
+  const addParticipant = (user) => {
+    setParticipants([...participants, {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      joinTime: Date.now(),
+      isMuted: false,
+      cameraOn: true,
+      handRaised: false
+    }]);
+  };
+  
+  const toggleMute = (participantId) => {
+    setParticipants(participants.map(p =>
+      p.id === participantId ? { ...p, isMuted: !p.isMuted } : p
+    ));
+  };
+  
+  return { participants, addParticipant, toggleMute };
+};
+```
+
+================================================================================
+MODUL 4: AI-POWERED INSIGHTS
+================================================================================
+
+4.1 AUTOMATIC SUMMARIZATION
+────────────────────────────
+
+Stack: OpenAI GPT-4 Turbo
+
+Implementation:
+```javascript
+const generateMeetingSummary = async (transcript) => {
+  const prompt = `
+    Du bist ein Meeting-Analyst für Schweizer Unternehmen.
+    
+    Analysiere dieses Meeting-Transkript und gebe:
+    1. Executive Summary (3-5 Sätze)
+    2. Key Topics (max 5)
+    3. Decisions Made (mit Datum)
+    4. Action Items (mit Assignee)
+    5. Follow-up Meetings Needed
+    6. Sentiment Analysis (positive/neutral/negative)
+    
+    Transkript:
+    ${transcript}
+  `;
+  
+  const response = await openai.createChatCompletion({
+    model: 'gpt-4-turbo-preview',
+    messages: [{
+      role: 'system',
+      content: 'Du bist ein Experte für Meeting-Analyse'
+    }, {
+      role: 'user',
+      content: prompt
+    }],
+    temperature: 0.7
+  });
+  
+  return response.choices[0].message.content;
+};
+```
+
+4.2 ACTION ITEMS EXTRACTION
+────────────────────────────
+
+Intelligentes Erkennen von "To-Dos" aus Transkript:
+
+```javascript
+const extractActionItems = async (transcript) => {
+  const actionItemPatterns = [
+    /(?:muss|sollte|werden|wird).*?(?:bis|until|by)\s+(\w+)/gi,
+    /(?:ich|er|sie|wir|sie).*?(?:machen|tun|checken|prüfen)/gi,
+    /TODO|ACTION|URGENT/gi
+  ];
+  
+  // + AI-Parsing mit GPT
+  const response = await openai.createChatCompletion({
+    model: 'gpt-4',
+    messages: [{
+      role: 'user',
+      content: `
+        Extrahiere alle Action Items aus diesem Transkript.
+        Format: { task, assignee, dueDate, priority }
+        
+        Transkript: ${transcript}
+      `
+    }]
+  });
+  
+  return JSON.parse(response.choices[0].message.content);
+};
+```
+
+Output Format:
+```javascript
+{
+  actionItems: [
+    {
+      id: '1',
+      task: 'Marketing-Budget analysieren',
+      assignee: 'Anna Schmidt',
+      assigneeEmail: 'anna.schmidt@company.com',
+      dueDate: '2026-02-28',
+      priority: 'high',
+      timestamp: '00:45' // Wo im Meeting erwähnt
+    },
+    {
+      id: '2',
+      task: 'Stellenausschreibung erstellen',
+      assignee: 'Sarah Weber',
+      assigneeEmail: 'sarah.weber@company.com',
+      dueDate: '2026-03-07',
+      priority: 'medium',
+      timestamp: '01:20'
+    }
+  ],
+  summary: 'Wichtigste Punkte...',
+  sentiment: 'positive',
+  meetingDuration: '02:15'
+}
+```
+
+4.3 KEYWORD & TOPIC EXTRACTION
+───────────────────────────────
+
+Automatische Tagging und Kategorisierung:
+
+```javascript
+const extractTopics = async (transcript) => {
+  // NLP mit TensorFlow.js oder Backend-Service
+  const topics = await nlpService.analyzeSentences(transcript);
+  
+  return {
+    mainTopics: ['Budgetierung', 'Recruitment', 'KI-Projekt'],
+    keywords: ['Q1', 'Performance', '15%', 'Entwickler'],
+    sentiment: 'positive',
+    emphasis: ['Important: Budget increase', 'Critical: Hiring timeline'],
+    mentions: {
+      people: ['Anna Schmidt', 'Thomas Müller', 'Sarah Weber'],
+      companies: [],
+      products: []
+    }
+  };
+};
+```
+
+================================================================================
+MODUL 5: VIDEO RECORDING & PLAYBACK
+================================================================================
+
+5.1 VIDEO RECORDING IMPLEMENTATION
+───────────────────────────────────
+
+Upgrade von Audio zu Video:
+
+```javascript
+const useVideoRecorder = () => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [videoBlob, setVideoBlob] = useState(null);
+  const canvasRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  
+  const startVideoRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          cursor: 'always' // Zeige Cursor/Bildschirm
+        },
+        audio: true
+      });
+      
+      // Mit WebRTC verbinden
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'video/webm;codecs=vp9,opus'
+      });
+      
+      const chunks = [];
+      mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        setVideoBlob(blob);
+      };
+      
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Screen capture denied:', error);
+    }
+  };
+  
+  return { isRecording, videoBlob, startVideoRecording };
+};
+```
+
+5.2 VIDEO PLAYBACK & SCRUBBING
+───────────────────────────────
+
+Mit synchronisiertem Transkript:
+
+```javascript
+const VideoPlayer = ({ videoBlob, transcript }) => {
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const videoRef = useRef(null);
+  
+  const currentSegments = transcript.filter(seg => {
+    const [mins, secs] = seg.timestamp.split(':').map(Number);
+    const segmentTime = mins * 60 + secs;
+    return Math.abs(currentTime - segmentTime) < 5;
+  });
+  
+  return (
+    <div style={{ display: 'flex', gap: '16px' }}>
+      {/* Video */}
+      <div style={{ flex: 2 }}>
+        <video
+          ref={videoRef}
+          src={URL.createObjectURL(videoBlob)}
+          onTimeUpdate={() => setCurrentTime(videoRef.current.currentTime)}
+          controls
+          style={{ width: '100%' }}
+        />
+      </div>
+      
+      {/* Synchronized Transcript */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {currentSegments.map(seg => (
+          <div key={seg.timestamp} style={{
+            padding: '12px',
+            background: '#f0f0f0',
+            borderRadius: '8px',
+            marginBottom: '8px'
+          }}>
+            <strong>{seg.speaker}</strong>
+            <p>{seg.text}</p>
+            <small>{seg.timestamp}</small>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+```
+
+================================================================================
+MODUL 6: INTEGRATION MIT BESTEHENDEN TOOLS
+================================================================================
+
+6.1 MICROSOFT TEAMS INTEGRATION
+───────────────────────────────
+
+Direkte Teams-Integration:
+
+```javascript
+// Teams Bot/App Integration
+const teamsIntegration = {
+  // 1. Teams App Manifest
+  manifest: {
+    $schema: "https://developer.microsoft.com/en-us/json-schemas/teams/v1.14/MicrosoftTeams.schema.json",
+    manifestVersion: "1.14",
+    id: "smartmeets-app-id",
+    version: "1.0.0",
+    name: {
+      short: "SmartMeets",
+      full: "SmartMeets Meeting Transcription"
+    },
+    description: {
+      short: "AI-powered meeting transcription and analysis",
+      full: "Record, transcribe, and analyze meetings with AI"
+    }
+  },
+  
+  // 2. Teams Bot Handler
+  onMeetingStarted: async (meetingData) => {
+    const { meetingId, participants, startTime } = meetingData;
+    
+    // Auto-create SmartMeets Recording
+    const recording = await createRecording({
+      teamsMeetingId: meetingId,
+      attendees: participants,
+      startTime
+    });
+    
+    // Send Notification to Channel
+    await teamsAPI.sendChannelMessage({
+      channelId: meetingData.channelId,
+      message: `📹 Meeting being recorded by SmartMeets. ${recording.link}`
+    });
+  },
+  
+  // 3. Get Meeting Transcription
+  getMeetingTranscript: async (meetingId) => {
+    const transcript = await smartmeetsAPI.getTranscript(meetingId);
+    
+    // Send to Teams Channel
+    await teamsAPI.sendChannelMessage({
+      channelId: meetingData.channelId,
+      adaptiveCard: {
+        type: 'message',
+        attachments: [{
+          contentType: 'application/vnd.microsoft.card.adaptive',
+          contentUrl: null,
+          content: {
+            version: '1.4',
+            type: 'AdaptiveCard',
+            body: [
+              {
+                type: 'TextBlock',
+                text: '📝 Meeting Transcript',
+                weight: 'bolder'
+              },
+              {
+                type: 'TextBlock',
+                text: transcript.summary,
+                wrap: true
+              }
+            ]
+          }
+        }]
+      }
+    });
+  }
+};
+```
+
+6.2 SLACK INTEGRATION
+──────────────────────
+
+```javascript
+const slackIntegration = {
+  // /smartmeets command
+  commands: {
+    '/smartmeets record': async (channelId) => {
+      const meeting = await startRecording();
+      await slack.postMessage({
+        channel: channelId,
+        text: `🎙️ SmartMeets recording started in #${channelId}`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*Meeting Recording*\nStatus: Recording\nLink: ${meeting.shareLink}`
+            }
+          }
+        ]
+      });
+    },
+    
+    '/smartmeets summary': async (channelId) => {
+      const transcript = await getLatestTranscript(channelId);
+      await slack.postMessage({
+        channel: channelId,
+        text: transcript.summary,
+        blocks: generateTranscriptBlocks(transcript)
+      });
+    }
+  }
+};
+```
+
+6.3 ZOOM INTEGRATION
+─────────────────────
+
+```javascript
+const zoomIntegration = {
+  // Webhook für Zoom Events
+  onMeetingStart: async (zoomMeeting) => {
+    // Auto-start SmartMeets Recording
+    await startRecordingForZoom(zoomMeeting.id);
+  },
+  
+  onMeetingEnd: async (zoomMeeting) => {
+    // Fetch Zoom Recording
+    const zoomRecording = await zoomAPI.getRecording(zoomMeeting.id);
+    
+    // Transcribe mit SmartMeets
+    const transcript = await transcribeAudio(zoomRecording.downloadUrl);
+    
+    // Post Summary to Channel
+    await postMeetingSummary({
+      platform: 'zoom',
+      meetingId: zoomMeeting.id,
+      transcript
+    });
+  }
+};
+```
+
+================================================================================
+MODUL 7: ADVANCED FEATURES & ANALYTICS
+================================================================================
+
+7.1 MEETING ANALYTICS DASHBOARD
+────────────────────────────────
+
+Metriken:
+  - Meeting Duration
+  - Number of Participants
+  - Speaking Time per Person
+  - Sentiment Over Time
+  - Topic Evolution
+  - Decision Rate
+  - Action Item Completion Rate
+
+Implementation:
+```javascript
+const MeetingAnalyticsDashboard = ({ meeting }) => {
+  const analytics = {
+    speakingTime: calculateSpeakingTime(meeting.transcript),
+    sentiment: analyzeSentiment(meeting.transcript),
+    topicsDiscussed: extractTopics(meeting.transcript),
+    decisionsMade: extractDecisions(meeting.transcript),
+    engagementScore: calculateEngagement(meeting.transcript),
+    followUpRate: calculateFollowUps(meeting.transcript)
+  };
+  
+  return (
+    <div>
+      <SpeakingTimeChart data={analytics.speakingTime} />
+      <SentimentTimeline data={analytics.sentiment} />
+      <DecisionsCard data={analytics.decisionsMade} />
+      <EngagementGauge score={analytics.engagementScore} />
+    </div>
+  );
+};
+```
+
+7.2 COMPLIANCE & RECORD-KEEPING
+─────────────────────────────────
+
+Enterprise-Features:
+  - GDPR Compliance
+  - Data Retention Policies
+  - Audit Logs
+  - Access Control (Role-Based)
+  - Encryption at Rest & in Transit
+  - Backup & Disaster Recovery
+
+Implementierung:
+```javascript
+const complianceConfig = {
+  dataRetention: {
+    defaultDays: 365,
+    extendable: true,
+    autoDelete: true
+  },
+  
+  auditLog: {
+    logAllAccess: true,
+    trackDownloads: true,
+    trackShares: true,
+    retentionDays: 2555 // 7 Jahre
+  },
+  
+  encryption: {
+    atRest: 'AES-256',
+    inTransit: 'TLS 1.3',
+    keyRotation: 90 // Tage
+  },
+  
+  accessControl: {
+    roleBasedAccess: true,
+    twoFactorAuth: true,
+    ipWhitelist: true
+  }
+};
+```
+
+================================================================================
+MODUL 8: ARCHITECTURE & TECH STACK
+================================================================================
+
+8.1 FRONTEND ARCHITECTURE
+──────────────────────────
+
+```
+Frontend/
+├── components/
+│   ├── Meeting/
+│   │   ├── MeetingRecorder.jsx
+│   │   ├── MeetingPlanner.jsx
+│   │   ├── MeetingPlayer.jsx
+│   │   └── ParticipantsList.jsx
+│   ├── Calendar/
+│   │   ├── CalendarView.jsx
+│   │   ├── EventCreator.jsx
+│   │   └── InvitationModal.jsx
+│   ├── Analytics/
+│   │   ├── MeetingSummary.jsx
+│   │   ├── ActionItems.jsx
+│   │   └── Dashboard.jsx
+│   └── Common/
+│       ├── Button.jsx
+│       ├── Card.jsx
+│       └── Toast.jsx
+├── hooks/
+│   ├── useAudioRecorder.js
+│   ├── useVideoRecorder.js
+│   ├── useCalendarIntegration.js
+│   ├── useMeetingParticipants.js
+│   └── useTranscription.js
+├── services/
+│   ├── api.js
+│   ├── openaiService.js
+│   ├── calendarService.js
+│   ├── teamsService.js
+│   └── slackService.js
+└── context/
+    ├── MeetingContext.js
+    ├── UserContext.js
+    └── AppContext.js
+```
+
+Tech Stack:
+  - React 18+ (Hooks, Context API)
+  - TypeScript (für Type Safety)
+  - TailwindCSS (Styling)
+  - React Query (Data Fetching)
+  - Zustand (State Management)
+  - React Calendar (Calendar UI)
+  - Recharts (Analytics Charts)
+
+8.2 BACKEND ARCHITECTURE
+─────────────────────────
+
+```
+Backend/
+├── api/
+│   ├── routes/
+│   │   ├── meetings.js
+│   │   ├── transcriptions.js
+│   │   ├── calendar.js
+│   │   ├── invitations.js
+│   │   └── analytics.js
+│   └── middleware/
+│       ├── auth.js
+│       ├── validation.js
+│       └── errorHandler.js
+├── services/
+│   ├── transcriptionService.js (Whisper API)
+│   ├── diarizationService.js (Pyannote)
+│   ├── summaryService.js (GPT-4)
+│   ├── calendarService.js (OAuth integrations)
+│   ├── emailService.js
+│   └── storageService.js
+├── models/
+│   ├── Meeting.js
+│   ├── Transcript.js
+│   ├── User.js
+│   ├── ActionItem.js
+│   └── MeetingParticipant.js
+├── workers/
+│   ├── transcriptionWorker.js
+│   ├── diarizationWorker.js
+│   └── summaryWorker.js
+└── config/
+    ├── database.js
+    ├── cache.js
+    └── external-apis.js
+```
+
+Tech Stack:
+  - Node.js 18+ (Express/Fastify)
+  - PostgreSQL (Database)
+  - Redis (Caching & Jobs)
+  - Bull (Job Queue für async tasks)
+  - JWT (Authentication)
+  - OpenAI API
+  - Google Cloud APIs
+  - Microsoft Graph API
+  - Slack API
+  - AWS S3 (Video Storage)
+
+8.3 DATABASE SCHEMA
+────────────────────
+
+```sql
+-- Users
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  email VARCHAR(255) UNIQUE,
+  name VARCHAR(255),
+  avatar_url TEXT,
+  company_id UUID,
+  role ENUM('admin', 'user'),
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- Meetings
+CREATE TABLE meetings (
+  id UUID PRIMARY KEY,
+  title VARCHAR(255),
+  description TEXT,
+  organizer_id UUID REFERENCES users,
+  start_time TIMESTAMP,
+  end_time TIMESTAMP,
+  status ENUM('scheduled', 'recording', 'completed', 'cancelled'),
+  recording_url TEXT,
+  video_url TEXT,
+  participant_count INT,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- Meeting Participants
+CREATE TABLE meeting_participants (
+  id UUID PRIMARY KEY,
+  meeting_id UUID REFERENCES meetings,
+  user_id UUID REFERENCES users,
+  email VARCHAR(255),
+  name VARCHAR(255),
+  join_time TIMESTAMP,
+  leave_time TIMESTAMP,
+  is_organizer BOOLEAN,
+  speaker_profile_id UUID
+);
+
+-- Transcripts
+CREATE TABLE transcripts (
+  id UUID PRIMARY KEY,
+  meeting_id UUID REFERENCES meetings,
+  content TEXT,
+  language VARCHAR(10),
+  dialect VARCHAR(50),
+  duration INT,
+  created_at TIMESTAMP
+);
+
+-- Transcript Segments
+CREATE TABLE transcript_segments (
+  id UUID PRIMARY KEY,
+  transcript_id UUID REFERENCES transcripts,
+  speaker_id UUID REFERENCES meeting_participants,
+  speaker_name VARCHAR(255),
+  start_time INT,
+  end_time INT,
+  content TEXT,
+  is_edited BOOLEAN,
+  edited_by UUID REFERENCES users,
+  confidence_score FLOAT
+);
+
+-- Action Items
+CREATE TABLE action_items (
+  id UUID PRIMARY KEY,
+  meeting_id UUID REFERENCES meetings,
+  task_description TEXT,
+  assignee_id UUID REFERENCES users,
+  due_date DATE,
+  priority ENUM('high', 'medium', 'low'),
+  status ENUM('open', 'in_progress', 'completed'),
+  timestamp_in_meeting INT,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- Speaker Profiles
+CREATE TABLE speaker_profiles (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users,
+  voice_signature BYTEA,
+  known_names JSONB,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+```
+
+================================================================================
+MODUL 9: DEVELOPMENT PHASES & TIMELINE
+================================================================================
+
+PHASE 1: MVP v2.0 (8-10 Wochen)
+──────────────────────────────────
+
+Woche 1-2: Backend Setup
+  ✓ Express/Node.js Server
+  ✓ PostgreSQL Database
+  ✓ Authentication (JWT)
+  ✓ API Scaffolding
+
+Woche 3-4: Transcription Integration
+  ✓ OpenAI Whisper API Integration
+  ✓ Audio Upload & Storage
+  ✓ Basic Transcription Workflow
+
+Woche 5-6: Speaker Diarization
+  ✓ Manual Speaker Assignment UI
+  ✓ Speaker Profile Storage
+  ✓ Speaker-Transcript Linking
+
+Woche 7: Calendar Integration
+  ✓ Outlook OAuth Integration
+  ✓ Create/Update Events
+  ✓ Send Invitations
+  ✓ Basic UI für Meeting Planning
+
+Woche 8: Summarization & Analytics
+  ✓ GPT-4 Integration für Summaries
+  ✓ Action Items Extraction
+  ✓ Basic Analytics Dashboard
+
+Woche 9-10: Testing & Polish
+  ✓ End-to-End Testing
+  ✓ Performance Optimization
+  ✓ Bug Fixes & Documentation
+
+PHASE 2: Enhanced v2.1 (6-8 Wochen)
+────────────────────────────────────
+
+  - Video Recording Support
+  - Teams Integration
+  - Slack Integration
+  - Advanced Analytics
+  - Compliance & Audit Logs
+
+PHASE 3: Premium v2.2+ (Ongoing)
+─────────────────────────────────
+
+  - AI Voice Recognition
+  - Breakout Rooms
+  - Real-time Collaboration
+  - Advanced NLP & Custom Models
+  - Mobile Apps (iOS/Android)
+
+================================================================================
+MODUL 10: PRICING MODEL (ENTERPRISE)
+================================================================================
+
+Tiered Pricing:
+
+  STARTER ($99/month)
+  ├─ 5 Users
+  ├─ 20 Meetings/month
+  ├─ Basic Transcription
+  ├─ Email Invitations
+  └─ 30-day Storage
+
+  PROFESSIONAL ($299/month)
+  ├─ 25 Users
+  ├─ Unlimited Meetings
+  ├─ AI Summaries & Action Items
+  ├─ Calendar Integration (Outlook, Google)
+  ├─ 1-Year Storage
+  └─ Analytics Dashboard
+
+  ENTERPRISE (Custom)
+  ├─ Unlimited Users
+  ├─ Unlimited Meetings
+  ├─ All Features
+  ├─ Teams + Slack Integration
+  ├─ Compliance & Audit Logs
+  ├─ SLA & Priority Support
+  ├─ Custom Integrations
+  └─ On-Premises Option
+
+================================================================================
+MODUL 11: SECURITY CONSIDERATIONS
+================================================================================
+
+Data Protection:
+  ✓ End-to-End Encryption (für Video/Audio)
+  ✓ GDPR Compliance
+  ✓ SOC 2 Type II Certification
+  ✓ Regular Security Audits
+  ✓ Penetration Testing
+
+Authentication:
+  ✓ OAuth 2.0 für externe Integrations
+  ✓ SSO Support (Okta, Azure AD)
+  ✓ MFA (Multi-Factor Authentication)
+  ✓ API Keys mit Rate Limiting
+
+Storage:
+  ✓ AWS S3 mit Encryption
+  ✓ Automatic Backup (Daily)
+  ✓ Disaster Recovery Plan
+  ✓ Data Retention Policies
+
+Compliance:
+  ✓ GDPR (EU)
+  ✓ CCPA (California)
+  ✓ HIPAA (Healthcare)
+  ✓ SOX (Finance)
+  ✓ Swiss Data Protection Laws
+
+================================================================================
+MODUL 12: SUCCESS METRICS & KPIs
+================================================================================
+
+Product Metrics:
+  - User Adoption Rate
+  - Meeting Recording Rate
+  - Feature Usage (Calendar, Summaries, etc.)
+  - Transcription Accuracy Rate
+  - User Retention Rate
+
+Business Metrics:
+  - Monthly Recurring Revenue (MRR)
+  - Customer Acquisition Cost (CAC)
+  - Lifetime Value (LTV)
+  - Net Revenue Retention
+  - Market Share
+
+Quality Metrics:
+  - Transcription Accuracy (>95%)
+  - API Uptime (99.9%)
+  - Average Response Time (<200ms)
+  - Bug Resolution Time
+  - Customer Satisfaction (NPS >50)
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Entscheidungen treffen:
+   ✓ OpenAI Whisper oder Alternative?
+   ✓ Welche Kalender-Integrations zuerst?
+   ✓ Budget für API-Kosten?
+   ✓ Team-Zusammensetzung?
+
+2. Backend Setup beginnen
+   ✓ Node.js + Express
+   ✓ PostgreSQL
+   ✓ OpenAI API Key
+   ✓ Azure/AWS Account
+
+3. Frontend Refactoring
+   ✓ Component-Struktur überarbeiten
+   ✓ State Management (Zustand)
+   ✓ Routing Setup
+
+4. Erste Integration:
+   ✓ Outlook Calendar
+   ✓ OpenAI Whisper
+
+================================================================================
+END OF ROADMAP
+================================================================================

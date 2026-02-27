@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: smartmeets-db
+    environment:
+      POSTGRES_DB: smartmeets
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secure_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - smartmeets
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d smartmeets"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # pgAdmin for Database Management (Optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: smartmeets-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@smartmeets.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - smartmeets
+    restart: unless-stopped
+
+  # Backend Node.js Server (if running in Docker)
+  backend:
+    build:
+      context: ./smartmeets-v2-backend
+      dockerfile: Dockerfile
+    container_name: smartmeets-backend
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://admin:secure_password@postgres:5432/smartmeets
+      JWT_SECRET: dev-secret-key-change-in-production
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      FRONTEND_URL: http://localhost:5173
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - smartmeets
+    volumes:
+      - ./smartmeets-v2-backend:/app
+      - /app/node_modules
+    restart: unless-stopped
+    command: npm run dev
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  smartmeets:
+    driver: bridge
+
+# Usage:
+# 1. Create .env file with OPENAI_API_KEY
+# 2. Run: docker-compose up -d
+# 3. Check status: docker-compose ps
+# 4. View logs: docker-compose logs -f backend
+# 5. Stop: docker-compose down
